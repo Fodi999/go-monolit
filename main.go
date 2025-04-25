@@ -99,8 +99,10 @@ func main() {
 	// Запуск
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8000" // ⚠️ Koyeb использует 8000, если не указано
 	}
-	log.Printf("✅ Monolith сервер запущен на http://localhost:%s\n", port)
+
+	log.Printf("✅ Monolith сервер запущен на порт %s\n", port)
 	log.Fatal(app.Listen(":" + port))
 }
+
