@@ -44,9 +44,23 @@ func main() {
 	})
 
 	// Глобальные middleware
-	app.Use(cors.New())
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowMethods: "GET, POST, PUT, DELETE, OPTIONS",
+	}))
 	app.Use(logger.New())
 	app.Use(menuMiddleware.LoggerMiddleware())
+
+	// ✅ Базовый маршрут "/" для проверки работоспособности сервера
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.SendString("✅ Backend is up and running")
+	})
+
+	// ✅ Обработка favicon.ico (без ошибки)
+	app.Get("/favicon.ico", func(c *fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusNoContent)
+	})
 
 	// === AUTH ===
 	app.Post("/api/register", authHandlers.HandleRegister)
@@ -65,13 +79,10 @@ func main() {
 	app.Put("/api/users/:id", authHandlers.HandleUpdateProfile)
 
 	// === MENU ===
-
-	// 🔓 Публичные маршруты
 	app.Get("/api/menu/published", menuHandlers.GetPublishedMenuItems)
 	app.Get("/api/menu/published-with-category", menuHandlers.GetPublishedMenuItemsWithCategory)
 	app.Get("/api/categories", menuHandlers.GetAllCategories)
 
-	// 🔐 Приватные маршруты /api/menu/*
 	menu := app.Group("/api/menu", authMiddleware.JWTMiddleware)
 	menu.Get("/", menuHandlers.GetAllMenuItems)
 	menu.Get("/with-category", menuHandlers.GetAllMenuItemsWithCategory)
@@ -90,19 +101,20 @@ func main() {
 	menu.Delete("/:id", menuHandlers.DeleteMenuItem)
 	menu.Delete("/inventory/:id", menuHandlers.DeleteInventoryItem)
 
-	// 🔐 Приватные маршруты /api/categories/*
 	categories := app.Group("/api/categories", authMiddleware.JWTMiddleware)
 	categories.Post("/", menuHandlers.CreateCategory)
 	categories.Put("/:id", menuHandlers.UpdateCategory)
 	categories.Delete("/:id", menuHandlers.DeleteCategory)
 
-	// Запуск
+	// 🚀 Запуск приложения
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8000" // ⚠️ Koyeb использует 8000, если не указано
+		port = "8000" // По умолчанию для Koyeb
 	}
 
 	log.Printf("✅ Monolith сервер запущен на порт %s\n", port)
 	log.Fatal(app.Listen(":" + port))
 }
+
+
 
