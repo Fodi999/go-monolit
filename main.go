@@ -43,21 +43,29 @@ func main() {
 		},
 	})
 
-	// Глобальные middleware
+	// === МИДЛВАРЫ ===
+
+	// CORS (обязательно для Web)
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
+		AllowOrigins: "*", // можно указать конкретный домен (например, https://yourapp.vercel.app)
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 		AllowMethods: "GET, POST, PUT, DELETE, OPTIONS",
 	}))
+
+	// Обработка preflight-запросов (OPTIONS)
+	app.Options("/*", func(c *fiber.Ctx) error {
+		return c.SendStatus(fiber.StatusNoContent)
+	})
+
 	app.Use(logger.New())
 	app.Use(menuMiddleware.LoggerMiddleware())
 
-	// ✅ Базовый маршрут "/" для проверки работоспособности сервера
+	// === БАЗОВЫЕ МАРШРУТЫ ===
+
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendString("✅ Backend is up and running")
 	})
 
-	// ✅ Обработка favicon.ico (без ошибки)
 	app.Get("/favicon.ico", func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNoContent)
 	})
@@ -106,15 +114,17 @@ func main() {
 	categories.Put("/:id", menuHandlers.UpdateCategory)
 	categories.Delete("/:id", menuHandlers.DeleteCategory)
 
-	// 🚀 Запуск приложения
+	// 🚀 Запуск сервера
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8000" // По умолчанию для Koyeb
+		port = "8000"
 	}
 
-	log.Printf("✅ Monolith сервер запущен на порт %s\n", port)
+	log.Printf("✅ Monolith сервер запущен на порту %s\n", port)
 	log.Fatal(app.Listen(":" + port))
 }
+
+
 
 
 
