@@ -6,66 +6,63 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"monolith/menu-service/database"
 	"monolith/menu-service/models"
-	"monolith/menu-service/utils"
 )
 
 // 📦 Получить все блюда без категории
 func GetAllMenuItems(c *fiber.Ctx) error {
-	items, err := utils.GetAllMenuItems(database.DB)
-	if err != nil {
+	var items []models.MenuItem
+	if err := database.DB.Find(&items).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось получить блюда",
 		})
 	}
-	if items == nil {
-		items = []models.MenuItem{}
-	}
 	return c.JSON(items)
 }
+
 // 📂 Получить все опубликованные блюда с названием категории
 func GetPublishedMenuItemsWithCategory(c *fiber.Ctx) error {
-	items, err := utils.GetAllMenuItemsWithCategory(database.DB)
+	var result []models.MenuItemWithCategory
+
+	err := database.DB.Table("menu_items").
+		Select("menu_items.*, categories.name as category_name").
+		Joins("LEFT JOIN categories ON menu_items.category_id = categories.id").
+		Where("menu_items.published = TRUE").
+		Scan(&result).Error
+
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось получить опубликованные блюда с категориями",
 		})
 	}
 
-	// Фильтруем только опубликованные
-	var published []models.MenuItemWithCategory
-	for _, item := range items {
-		if item.Published {
-			published = append(published, item)
-		}
-	}
-
-	return c.JSON(published)
+	return c.JSON(result)
 }
 
 // 📂 Получить все блюда с названием категории (JOIN)
 func GetAllMenuItemsWithCategory(c *fiber.Ctx) error {
-	items, err := utils.GetAllMenuItemsWithCategory(database.DB)
+	var result []models.MenuItemWithCategory
+
+	err := database.DB.Table("menu_items").
+		Select("menu_items.*, categories.name as category_name").
+		Joins("LEFT JOIN categories ON menu_items.category_id = categories.id").
+		Scan(&result).Error
+
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось получить блюда с категориями",
 		})
 	}
-	if items == nil {
-		items = []models.MenuItemWithCategory{}
-	}
-	return c.JSON(items)
+
+	return c.JSON(result)
 }
 
 // 📦 Получить все опубликованные блюда
 func GetPublishedMenuItems(c *fiber.Ctx) error {
-	items, err := utils.GetPublishedMenuItems(database.DB)
-	if err != nil {
+	var items []models.MenuItem
+	if err := database.DB.Where("published = TRUE").Find(&items).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось получить опубликованные блюда",
 		})
-	}
-	if items == nil {
-		items = []models.MenuItem{}
 	}
 	return c.JSON(items)
 }
@@ -73,8 +70,11 @@ func GetPublishedMenuItems(c *fiber.Ctx) error {
 // 📊 Получить калькуляцию по блюду
 func GetCalculationByMenuItemID(c *fiber.Ctx) error {
 	menuItemID := c.Params("menuItemId")
-	calc, err := utils.GetCalculationByMenuItemID(database.DB, menuItemID)
-	if err != nil {
+	var calc models.Calculation
+
+	if err := database.DB.
+		Where("menu_item_id = ?", menuItemID).
+		First(&calc).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "Калькуляция не найдена",
 		})
@@ -85,8 +85,9 @@ func GetCalculationByMenuItemID(c *fiber.Ctx) error {
 // 🍽 Получить блюдо по ID
 func GetMenuItemByID(c *fiber.Ctx) error {
 	id := c.Params("id")
-	item, err := utils.GetMenuItemByID(database.DB, id)
-	if err != nil {
+	var item models.MenuItem
+
+	if err := database.DB.First(&item, "id = ?", id).Error; err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "Блюдо не найдено",
 		})
@@ -103,7 +104,8 @@ func CreateMenuItem(c *fiber.Ctx) error {
 		})
 	}
 	item.Margin = item.Price - item.CostPrice
-	if err := utils.CreateMenuItem(database.DB, &item); err != nil {
+
+	if err := database.DB.Create(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось сохранить блюдо",
 		})
@@ -114,36 +116,64 @@ func CreateMenuItem(c *fiber.Ctx) error {
 // 🛠 Обновить блюдо
 func UpdateMenuItem(c *fiber.Ctx) error {
 	id := c.Params("id")
-	var item models.MenuItem
-	if err := json.Unmarshal(c.Body(), &item); err != nil {
+	var input models.MenuItem
+
+	if err := json.Unmarshal(c.Body(), &input); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Неверный формат тела запроса",
 		})
 	}
-	item.Margin = item.Price - item.CostPrice
-	if err := utils.UpdateMenuItem(database.DB, id, &item); err != nil {
+	input.Margin = input.Price - input.CostPrice
+
+	var item models.MenuItem
+	if err := database.DB.First(&item, "id = ?", id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Блюдо не найдено",
+		})
+	}
+
+	item.Name = input.Name
+	item.Description = input.Description
+	item.Price = input.Price
+	item.CostPrice = input.CostPrice
+	item.Margin = input.Margin
+	item.ImageURL = input.ImageURL
+	item.CategoryID = input.CategoryID
+
+	if err := database.DB.Save(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось обновить блюдо",
 		})
 	}
+
 	return c.JSON(item)
 }
 
-// 🔄 Опубликовать (или снять публикацию) блюда
+// 🔄 Опубликовать/снять с публикации блюдо
 func PublishMenuItem(c *fiber.Ctx) error {
 	id := c.Params("id")
-	if err := utils.TogglePublishMenuItem(database.DB, id); err != nil {
+	var item models.MenuItem
+
+	if err := database.DB.First(&item, "id = ?", id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Блюдо не найдено",
+		})
+	}
+
+	item.Published = !item.Published
+	if err := database.DB.Save(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось изменить статус публикации блюда",
 		})
 	}
+
 	return c.SendStatus(fiber.StatusOK)
 }
 
 // ❌ Удалить блюдо
 func DeleteMenuItem(c *fiber.Ctx) error {
 	id := c.Params("id")
-	if err := utils.DeleteMenuItem(database.DB, id); err != nil {
+	if err := database.DB.Delete(&models.MenuItem{}, "id = ?", id).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось удалить блюдо",
 		})
@@ -153,14 +183,11 @@ func DeleteMenuItem(c *fiber.Ctx) error {
 
 // 📦 Получить все продукты со склада
 func GetInventoryItems(c *fiber.Ctx) error {
-	items, err := utils.GetAllInventoryItems(database.DB)
-	if err != nil {
+	var items []models.InventoryItem
+	if err := database.DB.Find(&items).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось получить складские продукты",
 		})
-	}
-	if items == nil {
-		items = []models.InventoryItem{}
 	}
 	return c.JSON(items)
 }
@@ -173,7 +200,7 @@ func CreateInventoryItem(c *fiber.Ctx) error {
 			"error": "Неверный формат тела запроса",
 		})
 	}
-	if err := utils.CreateInventoryItem(database.DB, &item); err != nil {
+	if err := database.DB.Create(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось добавить продукт на склад",
 		})
@@ -184,13 +211,29 @@ func CreateInventoryItem(c *fiber.Ctx) error {
 // 🛠 Обновить продукт на складе
 func UpdateInventoryItem(c *fiber.Ctx) error {
 	id := c.Params("id")
-	var item models.InventoryItem
-	if err := c.BodyParser(&item); err != nil {
+	var input models.InventoryItem
+
+	if err := c.BodyParser(&input); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Неверный формат тела запроса",
 		})
 	}
-	if err := utils.UpdateInventoryItem(database.DB, id, &item); err != nil {
+
+	var item models.InventoryItem
+	if err := database.DB.First(&item, "id = ?", id).Error; err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Продукт не найден",
+		})
+	}
+
+	item.ProductName = input.ProductName
+	item.WeightGrams = input.WeightGrams
+	item.PricePerKg = input.PricePerKg
+	item.Available = input.Available
+	item.Emoji = input.Emoji
+	item.Category = input.Category
+
+	if err := database.DB.Save(&item).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось обновить продукт",
 		})
@@ -201,7 +244,7 @@ func UpdateInventoryItem(c *fiber.Ctx) error {
 // 🗑 Удалить продукт со склада
 func DeleteInventoryItem(c *fiber.Ctx) error {
 	id := c.Params("id")
-	if err := utils.DeleteInventoryItem(database.DB, id); err != nil {
+	if err := database.DB.Delete(&models.InventoryItem{}, "id = ?", id).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось удалить продукт со склада",
 		})
@@ -209,7 +252,7 @@ func DeleteInventoryItem(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"message": "Продукт удалён"})
 }
 
-// 📊 Сохранить калькуляционную карту блюда
+// 📊 Сохранить калькуляцию
 func CreateCalculationForDish(c *fiber.Ctx) error {
 	var calc models.Calculation
 	if err := c.BodyParser(&calc); err != nil {
@@ -217,13 +260,14 @@ func CreateCalculationForDish(c *fiber.Ctx) error {
 			"error": "Неверный формат тела запроса",
 		})
 	}
-	if err := utils.SaveDishCalculation(database.DB, &calc); err != nil {
+	if err := database.DB.Create(&calc).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Не удалось сохранить калькуляцию",
 		})
 	}
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "Калькуляция сохранена"})
 }
+
 
 
 
